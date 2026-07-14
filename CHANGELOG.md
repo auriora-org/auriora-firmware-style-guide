@@ -2,6 +2,10 @@
 
 All notable changes to the AURIORA Firmware Style Guide are documented in this file. Released versions are tagged in version control.
 
+## 0.2.0 - 2026-07-14
+
+- Managed Unit API rules (§14.1): a Managed Unit's public API must expose capabilities/operations/status/errors at a high level (no register-level internals in the host contract); the API must be versioned with defined framing, identifiers, status/error codes, timeouts and integrity checking; unknown commands and unsupported versions must fail safely; firmware identity and API version must be readable; the Unit must implement a disabled→starting→ready→fault lifecycle with `UIF_READY` gating valid transactions; and the host contract must not rely on software-latency timing where a hardware sync signal exists.
+
 ## 0.1.0 - 2026-07-13
 
 First release.

@@ -1,7 +1,7 @@
 # AURIORA Firmware Style Guide
 
 **Document ID:** AFSG
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Status:** Normative
 **Complements:** AURIORA Engineering Standard (AES)
 **Language:** English
@@ -266,6 +266,16 @@ Interfaces to the outside world share one discipline regardless of transport —
 - **Shared buses.** Bus ownership and arbitration between modules MUST be explicit (one owning driver or a documented locking scheme) — two modules independently driving one bus is a design defect.
 - **Flow and errors.** Define what happens under load and loss: bounded buffers, backpressure or documented drop policy, retry limits, and error counters visible in diagnostics (Section 12).
 
+### 14.1 Managed Unit API
+
+These rules apply to firmware in a **Managed Unit** — an AURIORA Unit that contains a programmable controller and exposes a versioned, high-level Unit API to its host Module ([AES Architecture](https://github.com/auriora-org/auriora-engineering-standard/blob/main/docs/03-architecture.md), [AES-UNIT-006](https://github.com/auriora-org/auriora-engineering-standard/blob/main/docs/03-architecture.md#aes-unit-006-declared-execution-model)). They add to, and do not replace, the communication discipline above.
+
+- **High-level contract.** The public Unit API MUST expose capabilities, operations, status and errors at a high level. Internal component types and register-level protocols (radio, GNSS, sensor registers) MUST NOT be part of the host contract — the host operates the Unit through its API, not its internals. SPI (or whichever bus the profile defines) is a transport, not the semantic API definition.
+- **Versioned protocol.** The Unit API MUST be versioned. Messages MUST have defined framing, length, command/message identifiers, status/error codes, timeout behavior and integrity checking (Section 14 framing rules apply). Unknown commands and unsupported API versions MUST fail safely (defined error, no side effects), never by undefined behavior.
+- **Readable identity.** The Managed Unit MUST expose a readable firmware identity and Unit API version (Section 13 version reporting), so the host can validate API compatibility before relying on the Unit.
+- **Lifecycle and `UIF_READY`.** The Unit MUST implement at least the lifecycle states *disabled → starting → ready → fault*, as an explicit state machine (Section 7). `UIF_READY` MUST remain LOW until the Unit can accept valid API transactions, and MUST be deasserted before shutdown or on entering an unrecoverable fault state. Bring outputs to a safe state on fault (Section 6 fatal-error handling).
+- **Hardware sync over software timing.** Where the Unit Interface Profile provides a dedicated hardware synchronization signal, the host contract MUST NOT depend on timing derived only from software message latency; drive and document the hardware signal instead.
+
 ---
 
 ## 15. Power Management
@@ -376,4 +386,4 @@ The principles above, condensed to what experienced firmware engineers check by 
 
 ---
 
-*AURIORA Firmware Style Guide 0.1.0 — complements the AURIORA Engineering Standard. Licensed under CC BY-SA 4.0.*
+*AURIORA Firmware Style Guide 0.2.0 — complements the AURIORA Engineering Standard. Licensed under CC BY-SA 4.0.*
