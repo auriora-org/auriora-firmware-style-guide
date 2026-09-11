@@ -1,7 +1,7 @@
 # AURIORA Firmware Style Guide
 
 **Document ID:** AFSG
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Normative
 **Complements:** AURIORA Engineering Standard (AES)
 **Language:** English
@@ -274,7 +274,21 @@ These rules apply to firmware in a **Managed Unit** — an AURIORA Unit that con
 - **Versioned protocol.** The Unit API MUST be versioned. Messages MUST have defined framing, length, command/message identifiers, status/error codes, timeout behavior and integrity checking (Section 14 framing rules apply). Unknown commands and unsupported API versions MUST fail safely (defined error, no side effects), never by undefined behavior.
 - **Readable identity.** The Managed Unit MUST expose a readable firmware identity and Unit API version (Section 13 version reporting), so the host can validate API compatibility before relying on the Unit.
 - **Lifecycle and `UIF_READY`.** The Unit MUST implement at least the lifecycle states *disabled → starting → ready → fault*, as an explicit state machine (Section 7). `UIF_READY` MUST remain LOW until the Unit can accept valid API transactions, and MUST be deasserted before shutdown or on entering an unrecoverable fault state. Bring outputs to a safe state on fault (Section 6 fatal-error handling).
-- **Hardware sync over software timing.** Where the Unit Interface Profile provides a dedicated hardware synchronization signal, the host contract MUST NOT depend on timing derived only from software message latency; drive and document the hardware signal instead.
+- **Hardware sync over software timing.** Where the Unit Interface Profile provides a dedicated hardware synchronization signal, the host contract MUST NOT depend on timing derived only from software message latency; drive and document the hardware signal instead. This is a Unit-to-host signal within one Module; the Module-to-Module SYNC interface is a different thing (§14.2).
+
+### 14.2 Module Synchronization Interface (SYNC)
+
+These rules apply to firmware in a Module that provides a SYNC IN or SYNC OUT port. What SYNC is and the behavior AES requires — a single-meaning event edge, armed execution, ignore-while-running by default, an explicit post-completion mode, a configured output source and a logged event record — are defined by AES ([Interfaces and Versioning §4](https://github.com/auriora-org/auriora-engineering-standard/blob/main/docs/05-interfaces-and-versioning.md#4-module-synchronization-interface), `AES-SYNC-001` to `AES-SYNC-004`); this section states how firmware implements them. SYNC is Module-to-Module and is unrelated to the Unit-to-host synchronization signal of §14.1.
+
+- **Capture the edge in hardware.** Timestamp the SYNC IN rising edge with a hardware mechanism — timer input capture, an edge interrupt reading a free-running counter, DMA or a programmable-I/O peripheral — never by polling from a task. The timestamp is taken at capture, not when the event is processed. Where the Module has a sample clock (audio frames, ADC samples), convert the capture to that time base and record the event as a frame or sample index as well as in local time; the sample index is what later correlation uses.
+- **ISR does the minimum.** The capture ISR records the timestamp, increments the local RX counter and hands off (Section 8). The decision — armed or not, valid in this state or not, which action — runs in the owning task through the state machine.
+- **Armed gate as an explicit state machine.** Model SYNC behavior with named states (baseline `IDLE → CONFIGURED → ARMED → RUNNING → COMPLETE`, Section 7) and put the SYNC event into the transition table of every state. An event in a state that does not accept it is an explicit no-op that logs an ignored event with a reason (`NOT_ARMED`, `RUNNING`, `INVALID_STATE`) — never a silent drop and never an implicit restart, stop or queue. `COMPLETE → IDLE` (one-shot) versus `COMPLETE → ARMED` (repeat-armed) is a configuration value, readable over the Host Interface.
+- **Binding is validated configuration.** The SYNC IN action, SYNC OUT source, delay and post-completion mode are runtime configuration (Section 13): stored with version and integrity check, validated against the actions and sources this Module actually supports, rejected with a defined error otherwise, and reported in the Module's status so a host can record them with the experiment. Support only the actions the Module needs — `NONE` plus one start action is a complete first implementation.
+- **Deterministic delay.** A configured delay between the event and the action is realized on a hardware timer, or scheduled against the sample clock from the captured timestamp, so that its jitter is the capture jitter and not task latency. The delay counts from the captured edge, not from when the ISR ran or the task woke.
+- **SYNC OUT marks the real event.** Generate the output pulse from the internal event it is bound to — the block in which the first stimulus sample actually leaves the converter, the first acquired sample, the protocol end — through a hardware-timed output, compensating known fixed pipeline latency where it has been characterized. Do not pulse on command receipt or on SYNC IN reception unless that is the configured source. One source per output by default; where several sources may be active at once, the configuration says so explicitly and the documentation says that a receiver cannot tell the pulses apart.
+- **Never encode meaning in the pulse.** Pulse width, count and spacing carry no information: firmware MUST NOT emit patterns and MUST NOT interpret them. Anything that needs a type or a parameter goes over the Host Interface.
+- **Log and count.** Record received, transmitted and ignored SYNC events (Section 12) with local timestamp and sample index, current state, related run or protocol identifier, ignore reason and the local per-direction counter. The counters are diagnostics readable over the Host Interface, reset only explicitly, and local: never present them as synchronized with another Module.
+- **Test it.** Host-test the state machine against every state × event pair, including unarmed, mid-run and repeat-armed cases (Section 18); on hardware, measure edge-to-action latency and jitter over a run of events and record the figures in the project documentation — they are part of the Module's timing contract.
 
 ---
 
@@ -386,4 +400,4 @@ The principles above, condensed to what experienced firmware engineers check by 
 
 ---
 
-*AURIORA Firmware Style Guide 0.2.0 — complements the AURIORA Engineering Standard. Licensed under CC BY-SA 4.0.*
+*AURIORA Firmware Style Guide 0.3.0 — complements the AURIORA Engineering Standard. Licensed under CC BY-SA 4.0.*
