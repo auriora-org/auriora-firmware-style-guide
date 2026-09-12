@@ -1,7 +1,7 @@
 # AURIORA Firmware Style Guide
 
 **Document ID:** AFSG
-**Version:** 0.3.0
+**Version:** 0.4.0
 **Status:** Normative
 **Complements:** AURIORA Engineering Standard (AES)
 **Language:** English
@@ -289,6 +289,24 @@ These rules apply to firmware in a Module that provides a SYNC IN or SYNC OUT po
 - **Never encode meaning in the pulse.** Pulse width, count and spacing carry no information: firmware MUST NOT emit patterns and MUST NOT interpret them. Anything that needs a type or a parameter goes over the Host Interface.
 - **Log and count.** Record received, transmitted and ignored SYNC events (Section 12) with local timestamp and sample index, current state, related run or protocol identifier, ignore reason and the local per-direction counter. The counters are diagnostics readable over the Host Interface, reset only explicitly, and local: never present them as synchronized with another Module.
 - **Test it.** Host-test the state machine against every state × event pair, including unarmed, mid-run and repeat-armed cases (Section 18); on hardware, measure edge-to-action latency and jitter over a run of events and record the figures in the project documentation — they are part of the Module's timing contract.
+
+---
+
+### 14.3 Module Control Interface (MCI)
+
+These rules apply to firmware in a Module that exposes a control surface to a host. What MCI is and what AES requires of it — one transport-independent contract, persistent identity, declared capabilities, an observable lifecycle with an ARM boundary, and staged object transfer — is defined by AES ([Interfaces and Versioning §5](https://github.com/auriora-org/auriora-engineering-standard/blob/main/docs/05-interfaces-and-versioning.md#5-module-control-interface), `AES-MCI-001` to `AES-MCI-005`); this section states how firmware implements them. MCI is the Module-to-host control path and is unrelated to the Managed Unit API of §14.1, which is how a Module talks *down* to its Units.
+
+- **One semantic layer, several transport adapters.** Implement the operations once, behind an internal interface that takes a decoded request and returns a decoded response. Transport adapters — a local USB connection, a Module Hub link — do framing, correlation and flow control and nothing else. No handler may branch on which transport a request arrived over: the moment one does, the local service path and the deployed path start to diverge, and it is the recovery path that quietly rots.
+- **Identity before everything.** Identity MUST be answerable before any configuration, from the first request after reset, and MUST NOT depend on the transport, the cable or the host. Serve it from immutable or write-protected storage (Section 13), not from RAM populated later in startup: a Module that can only report who it is once it has initialized successfully cannot be identified when it matters most.
+- **Capabilities are a table, not an assumption.** Keep the declared capability set in one place and generate the dispatch checks from it, so that what the Module *says* it supports and what it *actually* accepts cannot drift. An operation outside the declared set MUST return a defined "unsupported" error. Silent success is the failure the host cannot see — accepting a configuration write for a feature the build does not have is worse than refusing it.
+- **The lifecycle is an explicit state machine.** Model `IDLE → CONFIGURED → ARMED → RUNNING → COMPLETE` with named states (Section 7), and put every MCI operation into the transition table. A refused transition MUST report *why* — invalid configuration, missing asset, unverified session, blocking fault — not merely that it failed. This is the same state machine the SYNC event enters through (§14.2); arming is where the two interfaces meet.
+- **ARM validates, it does not promise.** Entering `ARMED` MUST mean every precondition has actually been checked: configuration valid, required assets present and verified, selected session valid, hardware prepared, timing path ready, no blocking fault, no transfer in flight. Report the state, never an acknowledgment of the request — a host that is told "arming accepted" learns nothing it can act on.
+- **Never let control be the trigger.** Where several Modules must act together, firmware MUST NOT provide a control operation that is documented or implied as the way to start them simultaneously. The deterministic instant belongs to SYNC (§14.2). A single-Module start operation is legitimate and should say plainly in its documentation that it carries no inter-Module timing guarantee.
+- **Stage, verify, then commit.** Bulk objects — assets, sessions, firmware — MUST be written to a staging location, verified against an integrity value covering the whole object, and only then committed into the active inventory. Never write in place, and never make an object selectable before verification. An interrupted or failed transfer leaves the previously committed object untouched; the staging area is reclaimed, not left to be discovered later. For firmware specifically, Section 16 governs and its dual-slot scheme is the same discipline.
+- **Expose the inventory with content identity.** Report each stored object with its identity and the content integrity value the host can compare against. This is what lets a host skip a transfer that is not needed — the difference between deploying to one Module and deploying to twenty — and it costs one stored digest per object.
+- **Configuration readback is part of the contract.** The active configuration, the SYNC binding, delays, post-completion mode, selected session and firmware version MUST all be readable (Section 13), because an experiment that cannot be read back cannot be reproduced from its records.
+- **Bound everything the host can start.** Transfers, validation and arming all have timeouts and defined failure states (Section 14 rules apply). A Module that can be left mid-transfer by a host that disappeared is a Module that needs a power cycle to recover, which defeats the purpose of a remote management path.
+- **Test the state machine, not the happy path.** Host-test every state × operation pair, including arming with a missing asset, transfer interrupted before commit, unsupported operation, and operations arriving in the wrong order (Section 18). These are the cases a bench never reproduces on demand and a field deployment produces weekly.
 
 ---
 
